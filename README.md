@@ -1,4 +1,8 @@
 
+<video src="./March29.mov" autoplay loop muted playsinline style="max-width: 100%;"></video>
+
+***
+
 # Interactive Perceptual Hailstone — Stage 4 Prototype
 
 This artifact is a Step 4 hailstone sculpture prototype aligned to the locked concept.
