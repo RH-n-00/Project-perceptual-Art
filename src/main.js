@@ -1,13 +1,19 @@
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { createHailstonePrototype } from './hailstone.js';
+import { createObjectRotationController } from './controller.js';
 
+const params = new URLSearchParams(window.location.search);
 const canvas = document.getElementById('app');
 const hint = document.getElementById('hint');
+const reduced = window.matchMedia('(pointer: coarse)').matches || window.innerWidth < 900;
+const debug = params.get('debug') === '1';
+const staticView = params.get('view');
+const disableAuto = params.get('auto') === '0';
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color('#23272b');
+scene.fog = new THREE.FogExp2('#23272b', 0.065);
 
 const renderer = new THREE.WebGLRenderer({
   canvas,
@@ -17,12 +23,13 @@ const renderer = new THREE.WebGLRenderer({
 });
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 0.92;
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.toneMappingExposure = 0.90;
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, reduced ? 1.25 : 1.5));
 renderer.setSize(window.innerWidth, window.innerHeight);
 
 const camera = new THREE.PerspectiveCamera(32, window.innerWidth / window.innerHeight, 0.1, 30);
 camera.position.set(0, 0, 4.2);
+camera.lookAt(0, 0, 0);
 scene.add(camera);
 
 const environment = new RoomEnvironment();
@@ -32,47 +39,56 @@ scene.environment = envMap;
 environment.dispose();
 pmremGenerator.dispose();
 
-const sculpture = createHailstonePrototype(renderer);
-scene.add(sculpture);
-
-const keyLight = new THREE.DirectionalLight('#f4f8ff', 1.1);
-keyLight.position.set(4.5, 3.2, 5.6);
-scene.add(keyLight);
-
-const fillLight = new THREE.HemisphereLight('#cfd9e3', '#1d2125', 0.85);
+const fillLight = new THREE.HemisphereLight('#d4dde6', '#1c2024', 0.35);
 scene.add(fillLight);
 
-const rimLight = new THREE.DirectionalLight('#c9d8e6', 0.65);
-rimLight.position.set(-5.8, 1.4, -4.8);
+const keyLight = new THREE.DirectionalLight('#eff5fb', 1.25);
+keyLight.position.set(3, 4, 6);
+scene.add(keyLight);
+
+const fillDirectional = new THREE.DirectionalLight('#c7d3df', 0.35);
+fillDirectional.position.set(-4, -1, 2);
+scene.add(fillDirectional);
+
+const rimLight = new THREE.DirectionalLight('#dce7f1', 0.75);
+rimLight.position.set(-5, 3, -4);
 scene.add(rimLight);
 
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-controls.dampingFactor = 0.055;
-controls.enablePan = false;
-controls.enableZoom = false;
-controls.rotateSpeed = 0.72;
-controls.minDistance = 4.2;
-controls.maxDistance = 4.2;
-controls.minPolarAngle = 0.02;
-controls.maxPolarAngle = Math.PI - 0.02;
-controls.target.set(0, 0, 0);
-controls.update();
+const artworkRoot = new THREE.Group();
+artworkRoot.name = 'ArtworkRoot';
+const autoRig = new THREE.Group();
+autoRig.name = 'AutoRig';
+const userRig = new THREE.Group();
+userRig.name = 'UserRig';
+const hailstone = createHailstonePrototype(renderer, { reduced, debug });
+userRig.add(hailstone);
+autoRig.add(userRig);
+artworkRoot.add(autoRig);
+scene.add(artworkRoot);
 
-const front = new THREE.Quaternion();
-const obliqueA = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.22, 0.52, 0.18, 'YXZ'));
-const right = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.08, -Math.PI / 2, -0.08, 'YXZ'));
-const obliqueB = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.33, -1.04, 0.16, 'YXZ'));
-const top = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2, 0.12, -0.16, 'YXZ'));
-const obliqueC = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.72, 0.52, 0.28, 'YXZ'));
+const qFront = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.0, 0.0, 0.03, 'YXZ'));
+const qObliqueA = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.18, -0.36, 0.12, 'YXZ'));
+const qRight = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.0, -Math.PI / 2, -0.04, 'YXZ'));
+const qObliqueB = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.48, -1.08, 0.12, 'YXZ'));
+const qTop = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2, 0.05, -0.12, 'YXZ'));
+const qObliqueC = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.76, 0.48, 0.22, 'YXZ'));
+
+const canonicalViews = {
+  front: qFront,
+  right: qRight,
+  top: qTop,
+  obliqueA: qObliqueA,
+  obliqueB: qObliqueB,
+  obliqueC: qObliqueC,
+};
 
 const autoPath = [
-  { quaternion: front, hold: 1.2, travel: 3.8 },
-  { quaternion: obliqueA, hold: 0.65, travel: 3.8 },
-  { quaternion: right, hold: 1.2, travel: 4.0 },
-  { quaternion: obliqueB, hold: 0.65, travel: 4.2 },
-  { quaternion: top, hold: 1.25, travel: 4.2 },
-  { quaternion: obliqueC, hold: 0.65, travel: 3.9 },
+  { quaternion: qFront, hold: 1.2, travel: 3.8 },
+  { quaternion: qObliqueA, hold: 0.65, travel: 3.8 },
+  { quaternion: qRight, hold: 1.2, travel: 4.0 },
+  { quaternion: qObliqueB, hold: 0.65, travel: 4.2 },
+  { quaternion: qTop, hold: 1.25, travel: 4.2 },
+  { quaternion: qObliqueC, hold: 0.65, travel: 3.9 },
 ];
 
 const autoState = {
@@ -80,25 +96,27 @@ const autoState = {
   phase: 'hold',
   elapsed: 0,
   resumeAt: 0,
-  isPausedByUser: false,
+  enabled: !disableAuto,
 };
 
 function smootherStep(t) {
   return t * t * t * (t * (t * 6 - 15) + 10);
 }
 
-function updateAutoRotation(deltaSeconds, timeSeconds) {
-  if (autoState.isPausedByUser || timeSeconds < autoState.resumeAt) {
+function updateAutoRotation(deltaSeconds, timeSeconds, controller) {
+  if (!autoState.enabled) {
+    return;
+  }
+  if (controller.isDragging || !controller.isSettled || timeSeconds < autoState.resumeAt) {
     return;
   }
 
   const currentPose = autoPath[autoState.segmentIndex];
   const nextPose = autoPath[(autoState.segmentIndex + 1) % autoPath.length];
-
   autoState.elapsed += deltaSeconds;
 
   if (autoState.phase === 'hold') {
-    sculpture.quaternion.copy(currentPose.quaternion);
+    autoRig.quaternion.copy(currentPose.quaternion);
     if (autoState.elapsed >= currentPose.hold) {
       autoState.phase = 'travel';
       autoState.elapsed = 0;
@@ -107,7 +125,7 @@ function updateAutoRotation(deltaSeconds, timeSeconds) {
   }
 
   const travelProgress = THREE.MathUtils.clamp(autoState.elapsed / currentPose.travel, 0, 1);
-  sculpture.quaternion.slerpQuaternions(
+  autoRig.quaternion.slerpQuaternions(
     currentPose.quaternion,
     nextPose.quaternion,
     smootherStep(travelProgress),
@@ -120,33 +138,38 @@ function updateAutoRotation(deltaSeconds, timeSeconds) {
   }
 }
 
-controls.addEventListener('start', () => {
-  autoState.isPausedByUser = true;
-  autoState.resumeAt = 0;
-  document.body.classList.add('dragging');
-  if (hint) {
-    hint.style.animation = 'none';
-    hint.style.opacity = '0';
-  }
+if (staticView && canonicalViews[staticView]) {
+  autoRig.quaternion.copy(canonicalViews[staticView]);
+  autoState.enabled = false;
+}
+
+const controller = createObjectRotationController({
+  domElement: renderer.domElement,
+  userRig,
+  hintElement: hint,
+  onInteractionStart() {
+    autoState.resumeAt = Infinity;
+  },
+  onInteractionSettled() {
+    autoState.resumeAt = performance.now() / 1000 + 0.9;
+  },
 });
 
-controls.addEventListener('end', () => {
-  autoState.isPausedByUser = false;
-  autoState.resumeAt = performance.now() / 1000 + 1.15;
-  document.body.classList.remove('dragging');
-});
-
-renderer.domElement.addEventListener('pointerdown', () => {
-  if (hint) {
-    hint.style.animation = 'none';
-    hint.style.opacity = '0';
-  }
-});
+window.__hailstoneApp = {
+  scene,
+  camera,
+  artworkRoot,
+  autoRig,
+  userRig,
+  hailstone,
+  canonicalViews,
+};
 
 window.addEventListener('resize', () => {
+  const reducedNow = window.matchMedia('(pointer: coarse)').matches || window.innerWidth < 900;
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, reducedNow ? 1.25 : 1.5));
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
@@ -155,15 +178,15 @@ renderer.setAnimationLoop(() => {
   const delta = clock.getDelta();
   const elapsed = clock.getElapsedTime();
 
-  updateAutoRotation(delta, elapsed);
-  controls.update();
+  controller.update(delta);
+  updateAutoRotation(delta, elapsed, controller);
   renderer.render(scene, camera);
 });
 
 window.addEventListener('pagehide', () => {
   renderer.setAnimationLoop(null);
-  sculpture.userData.dispose?.();
+  controller.dispose();
+  hailstone.userData.dispose?.();
   envMap.dispose();
-  controls.dispose();
   renderer.dispose();
 });
