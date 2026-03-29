@@ -1,36 +1,22 @@
-<div align="center">
-  <video src="https://github.com/user-attachments/assets/b3f8f2f7-b967-4dc4-82ba-4890bedfda2f" autoplay loop muted playsinline style="max-width: 50%; border-radius: 5px;"></video>
-</div>
+
+## Project: Interactive Perceptual Hailstone
+
+start March 28
 
 ***
 
-# Interactive Perceptual Hailstone — Stage 4 Prototype
+<details>
+   <summary><b> Hailstone PROTOTYPE </b></summary>
+   
+  <div align="center">
+  <video src="https://github.com/user-attachments/assets/b3f8f2f7-b967-4dc4-82ba-4890bedfda2f" autoplay loop muted playsinline style="max-width: 50%; border-radius: 5px;"></video>
+</div>
 
-This artifact is a Step 4 hailstone sculpture prototype aligned to the locked concept.
-It focuses on the shell only:
+March 29 
 
-- dark ash background (`#23272B`)
-- Icosahedron-based hailstone silhouette
-- Perlin-noise-driven vertex displacement
-- translucent, frosted ice material
-- slow multi-axis auto rotation
-- mouse / touch rotation with pan and zoom disabled
-- empty `PerceptualContentRoot` placeholder for later `HALE / HAIL / Union Jack` volumes
+귀엽긴한데 hailstone이 아니라 그냥 스톤처럼 보임. opacity 조절이랑 디테일 추가 필요할듯.
+다만, 실제 운용에서 1개가 아니라 움직이는 수천개를 사용해야하는데 WebGl에서 안정적으로 구현이 가능할지?
 
-## Files
 
-- `index.html` — entry point
-- `styles.css` — fullscreen layout and minimal hint UI
-- `src/main.js` — scene setup, lighting, controls, motion
-- `src/hailstone.js` — hailstone mesh generation and material layering
-- `vendor/three/*` — vendored three.js r183 modules
 
-## Notes
-
-This prototype intentionally does **not** include the perceptual text / flag layers.
-It is a shell-and-material milestone meant to validate the hailstone object before Step 5 integration.
-
-## GitHub Pages
-
-The project is a static site. Upload the folder contents to a repository root (or `/docs`) and enable GitHub Pages.
-No build step is required.
+</details>
