@@ -1,3 +1,4 @@
+
 # Interactive Perceptual Hailstone — Stage 4 Prototype
 
 This artifact is a Step 4 hailstone sculpture prototype aligned to the locked concept.
