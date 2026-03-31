@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { ImprovedNoise } from 'three/addons/math/ImprovedNoise.js';
-import { buildPerceptualContent } from './content.js';
 
 const FROST_BASE = new THREE.Color('#dce6ee');
 
@@ -58,7 +57,7 @@ function createFrostTexture(size = 256) {
   return texture;
 }
 
-function createHailstoneGeometry(radius = 1, detail = 5, offsetSeed = 0) {
+function createHailstoneGeometry(radius = 1, detail = 5) {
   const geometry = new THREE.IcosahedronGeometry(radius, detail);
   const positions = geometry.getAttribute('position');
   const noise = new ImprovedNoise();
@@ -72,21 +71,21 @@ function createHailstoneGeometry(radius = 1, detail = 5, offsetSeed = 0) {
     direction.copy(original).normalize();
 
     const low = noise.noise(
-      direction.x * 1.45 + 10.7 + offsetSeed,
-      direction.y * 1.45 - 2.8 + offsetSeed * 0.5,
-      direction.z * 1.45 + 5.9 - offsetSeed * 0.33,
+      direction.x * 1.45 + 10.7,
+      direction.y * 1.45 - 2.8,
+      direction.z * 1.45 + 5.9,
     );
 
     const mid = noise.noise(
-      direction.x * 3.2 - 14.1 + offsetSeed * 0.7,
-      direction.y * 3.2 + 7.4 - offsetSeed * 0.4,
-      direction.z * 3.2 - 11.8 + offsetSeed * 0.8,
+      direction.x * 3.2 - 14.1,
+      direction.y * 3.2 + 7.4,
+      direction.z * 3.2 - 11.8,
     );
 
     const fine = noise.noise(
-      direction.x * 7.8 + 3.6 - offsetSeed,
-      direction.y * 7.8 + 13.1 + offsetSeed * 0.35,
-      direction.z * 7.8 - 1.7 + offsetSeed * 0.25,
+      direction.x * 7.8 + 3.6,
+      direction.y * 7.8 + 13.1,
+      direction.z * 7.8 - 1.7,
     );
 
     const ridge = 1.0 - Math.abs(fine);
@@ -103,12 +102,10 @@ function createHailstoneGeometry(radius = 1, detail = 5, offsetSeed = 0) {
   }
 
   geometry.computeVertexNormals();
-  geometry.computeBoundingSphere();
-  geometry.computeBoundingBox();
   return geometry;
 }
 
-function computeSafeRadius(geometry) {
+function computeMinRadius(geometry) {
   const positions = geometry.getAttribute('position');
   const cursor = new THREE.Vector3();
   let minRadius = Infinity;
@@ -116,91 +113,90 @@ function computeSafeRadius(geometry) {
     cursor.fromBufferAttribute(positions, i);
     minRadius = Math.min(minRadius, cursor.length());
   }
-  return Math.max(0.62, minRadius - 0.14);
+  return minRadius;
 }
 
-function createFrostCorePoints({ count, seed, safeRadius, isInWhiteVoid }) {
+function createBubblePoints({ count = 340, seed = 7, isExcluded = null } = {}) {
   const random = mulberry32(seed);
   const positions = new Float32Array(count * 3);
-  const sizes = new Float32Array(count);
   const geometry = new THREE.BufferGeometry();
   const candidate = new THREE.Vector3();
   let placed = 0;
   let attempts = 0;
+  const maxAttempts = count * 80;
 
-  while (placed < count && attempts < count * 50) {
+  while (placed < count && attempts < maxAttempts) {
     attempts += 1;
-    const x = random() * 2 - 1;
-    const y = random() * 2 - 1;
-    const z = random() * 2 - 1;
-    const len2 = x * x + y * y + z * z;
-    if (len2 > 1 || len2 < 0.015) continue;
+    let x = 0;
+    let y = 0;
+    let z = 0;
+    let lengthSquared = 2;
 
-    const radialBias = Math.pow(random(), 1.7);
-    candidate.set(x, y, z).normalize().multiplyScalar(THREE.MathUtils.lerp(0.1, safeRadius * 0.92, radialBias));
-    candidate.x *= 0.92;
-    candidate.y *= 1.02;
-    candidate.z *= 0.88;
+    while (lengthSquared > 1 || lengthSquared < 0.06) {
+      x = random() * 2 - 1;
+      y = random() * 2 - 1;
+      z = random() * 2 - 1;
+      lengthSquared = x * x + y * y + z * z;
+    }
 
-    if (candidate.length() > safeRadius || isInWhiteVoid(candidate)) {
+    const radiusScale = 0.23 + random() * 0.47;
+    candidate.set(x * radiusScale * 0.92, y * radiusScale * 1.02, z * radiusScale * 0.88);
+    if (isExcluded?.(candidate)) {
       continue;
     }
 
-    const idx = placed * 3;
-    positions[idx + 0] = candidate.x;
-    positions[idx + 1] = candidate.y;
-    positions[idx + 2] = candidate.z;
-    sizes[placed] = THREE.MathUtils.lerp(0.9, 1.8, random());
+    const cursor = placed * 3;
+    positions[cursor + 0] = candidate.x;
+    positions[cursor + 1] = candidate.y;
+    positions[cursor + 2] = candidate.z;
     placed += 1;
   }
 
   geometry.setAttribute('position', new THREE.BufferAttribute(positions.subarray(0, placed * 3), 3));
-  geometry.setAttribute('aSize', new THREE.BufferAttribute(sizes.subarray(0, placed), 1));
 
   const material = new THREE.PointsMaterial({
-    color: '#f3f7fa',
-    size: 0.014,
+    color: '#f4f7fa',
+    size: 0.017,
     sizeAttenuation: true,
     transparent: true,
-    opacity: 0.09,
+    opacity: 0.12,
     depthWrite: false,
     blending: THREE.NormalBlending,
   });
 
   const points = new THREE.Points(geometry, material);
+  points.name = 'BubblePoints';
   points.renderOrder = 5;
   return points;
 }
 
-export function createHailstonePrototype(renderer, { reduced = false, debug = false } = {}) {
-  const hailstoneGroup = new THREE.Group();
-  hailstoneGroup.name = 'HailstoneGroup';
+export function createHailstonePrototype(renderer) {
+  const sculpture = new THREE.Group();
+  sculpture.name = 'HailstonePrototype';
 
   const shellRoot = new THREE.Group();
   shellRoot.name = 'HailstoneShellRoot';
-  hailstoneGroup.add(shellRoot);
+  sculpture.add(shellRoot);
 
   const frostTexture = createFrostTexture();
-  frostTexture.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
+  const maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
+  frostTexture.anisotropy = Math.min(4, maxAnisotropy);
 
-  const shellDetail = reduced ? 3 : 5;
-  const outerGeometry = createHailstoneGeometry(1, shellDetail, 0.0);
-  const innerGeometry = createHailstoneGeometry(0.93, Math.max(2, shellDetail - 1), 6.8);
-  const coreGeometry = createHailstoneGeometry(0.84, Math.max(2, shellDetail - 1), 11.4);
-  const safeRadius = computeSafeRadius(outerGeometry);
-
-  const content = buildPerceptualContent({ safeRadius, reduced, debug });
+  const outerGeometry = createHailstoneGeometry(1, 5);
+  const secondaryGeometry = outerGeometry.clone();
+  const minRadius = computeMinRadius(outerGeometry);
+  const safeRadius = minRadius - 0.10;
 
   const coreMaterial = new THREE.MeshStandardMaterial({
     color: '#eef3f7',
     roughness: 0.96,
     metalness: 0.0,
     transparent: true,
-    opacity: 0.16,
+    opacity: 0.18,
     depthWrite: false,
     side: THREE.BackSide,
     bumpMap: frostTexture,
-    bumpScale: 0.008,
+    bumpScale: 0.01,
   });
 
   const mistMaterial = new THREE.MeshStandardMaterial({
@@ -208,72 +204,115 @@ export function createHailstonePrototype(renderer, { reduced = false, debug = fa
     roughness: 1.0,
     metalness: 0.0,
     transparent: true,
-    opacity: 0.07,
+    opacity: 0.08,
     depthWrite: false,
     side: THREE.DoubleSide,
     bumpMap: frostTexture,
-    bumpScale: 0.006,
+    bumpScale: 0.008,
   });
 
   const shellMaterial = new THREE.MeshPhysicalMaterial({
     color: FROST_BASE,
     metalness: 0.0,
-    roughness: reduced ? 0.29 : 0.26,
-    clearcoat: reduced ? 0.0 : 0.18,
+    roughness: 0.26,
+    clearcoat: 0.22,
     clearcoatRoughness: 0.12,
-    transmission: reduced ? 0.90 : 0.94,
-    thickness: 0.62,
-    ior: 1.22,
+    transmission: 0.97,
+    thickness: 0.70,
+    ior: 1.31,
     attenuationColor: new THREE.Color('#e3edf4'),
-    attenuationDistance: 1.7,
-    specularIntensity: 0.84,
-    envMapIntensity: reduced ? 0.72 : 1.0,
+    attenuationDistance: 1.50,
+    specularIntensity: 0.72,
+    envMapIntensity: 1.12,
     bumpMap: frostTexture,
-    bumpScale: reduced ? 0.010 : 0.018,
+    bumpScale: 0.02,
     roughnessMap: frostTexture,
   });
 
-  const coreMesh = new THREE.Mesh(coreGeometry, coreMaterial);
+  const isReduced = window.matchMedia('(pointer: coarse)').matches || window.innerWidth < 900;
+  if (isReduced) {
+    shellMaterial.clearcoat = 0.0;
+    shellMaterial.bumpScale *= 0.5;
+    shellMaterial.envMapIntensity *= 0.6;
+  }
+
+  const coreMesh = new THREE.Mesh(secondaryGeometry, coreMaterial);
+  coreMesh.name = 'CoreMesh';
+  coreMesh.scale.setScalar(0.84);
   coreMesh.renderOrder = 0;
 
-  const mistMesh = new THREE.Mesh(innerGeometry, mistMaterial);
+  const perceptualContentRoot = new THREE.Group();
+  perceptualContentRoot.name = 'PerceptualContentRoot';
+
+  let bubblePoints = createBubblePoints();
+
+  const mistMesh = new THREE.Mesh(secondaryGeometry.clone(), mistMaterial);
+  mistMesh.name = 'MistMesh';
+  mistMesh.scale.setScalar(0.93);
   mistMesh.renderOrder = 20;
 
   const outerShell = new THREE.Mesh(outerGeometry, shellMaterial);
+  outerShell.name = 'OuterShell';
   outerShell.renderOrder = 30;
 
-  const frostCore = createFrostCorePoints({
-    count: reduced ? 250 : 420,
-    seed: 1337,
-    safeRadius,
-    isInWhiteVoid: content.isInWhiteVoid,
-  });
+  shellRoot.add(coreMesh);
+  shellRoot.add(bubblePoints);
+  shellRoot.add(perceptualContentRoot);
+  shellRoot.add(mistMesh);
+  shellRoot.add(outerShell);
 
-  shellRoot.add(coreMesh, frostCore, mistMesh, outerShell);
-  hailstoneGroup.add(content.group);
-
-  if (debug) {
-    const safeSphere = new THREE.Mesh(
-      new THREE.SphereGeometry(safeRadius, 32, 16),
-      new THREE.MeshBasicMaterial({ color: 0x87c8ff, wireframe: true, transparent: true, opacity: 0.08 }),
-    );
-    safeSphere.name = 'DebugSafeRadius';
-    hailstoneGroup.add(safeSphere);
+  function rebuildBubblePoints({ isExcluded = null } = {}) {
+    if (bubblePoints) {
+      shellRoot.remove(bubblePoints);
+      bubblePoints.geometry.dispose();
+      bubblePoints.material.dispose();
+    }
+    bubblePoints = createBubblePoints({ count: 340, seed: 7, isExcluded });
+    shellRoot.add(bubblePoints);
+    sculpture.userData.refs.bubblePoints = bubblePoints;
+    return bubblePoints;
   }
 
-  hailstoneGroup.userData.safeRadius = safeRadius;
-  hailstoneGroup.userData.dispose = () => {
+  sculpture.userData.refs = {
+    shellRoot,
+    coreMesh,
+    bubblePoints,
+    perceptualContentRoot,
+    mistMesh,
+    outerShell,
+  };
+
+  sculpture.userData.metrics = {
+    minRadius,
+    safeRadius,
+  };
+
+  sculpture.userData.methods = {
+    rebuildBubblePoints,
+  };
+
+  sculpture.userData.dispose = () => {
+    if (bubblePoints) {
+      bubblePoints.geometry.dispose();
+      bubblePoints.material.dispose();
+    }
     outerGeometry.dispose();
-    innerGeometry.dispose();
-    coreGeometry.dispose();
+    secondaryGeometry.dispose();
+    mistMesh.geometry.dispose();
     shellMaterial.dispose();
     coreMaterial.dispose();
     mistMaterial.dispose();
-    frostCore.geometry.dispose();
-    frostCore.material.dispose();
-    content.group.userData.dispose?.();
     frostTexture.dispose();
+    while (perceptualContentRoot.children.length > 0) {
+      const child = perceptualContentRoot.children.pop();
+      child.geometry?.dispose?.();
+      if (Array.isArray(child.material)) {
+        child.material.forEach((material) => material?.dispose?.());
+      } else {
+        child.material?.dispose?.();
+      }
+    }
   };
 
-  return hailstoneGroup;
+  return sculpture;
 }

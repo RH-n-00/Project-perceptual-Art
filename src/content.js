@@ -1,41 +1,55 @@
-import * as THREE from 'three';
+const DEBUG_COUNTS = {
+  hale: 850,
+  hail: 850,
+  ujBlue: 1200,
+  ujRed: 500,
+};
 
-const UJ_BLUE = new THREE.Color('#1F3B73');
-const UJ_RED = new THREE.Color('#C8102E');
-const FROST_TEXT = new THREE.Color('#E8EFF3');
+const PRODUCTION_COUNTS = {
+  hale: 1400,
+  hail: 1400,
+  ujBlue: 1800,
+  ujRed: 760,
+};
 
-const LAYERS = {
+const LAYER_DESCRIPTORS = {
   hale: {
     id: 'HALE',
-    center: new THREE.Vector3(0, 0, 0.10),
-    normal: new THREE.Vector3(0, 0, 1),
-    uAxis: new THREE.Vector3(1, 0, 0),
-    vAxis: new THREE.Vector3(0, 1, 0),
-    width: 1.22,
-    height: 0.36,
-    thickness: 0.09,
+    center: [0, 0, 0.085],
+    normal: [0, 0, 1],
+    uAxis: [1, 0, 0],
+    vAxis: [0, 1, 0],
+    width: 1.08,
+    height: 0.32,
+    thickness: 0.07,
   },
   hail: {
     id: 'HAIL',
-    center: new THREE.Vector3(-0.10, 0, 0),
-    normal: new THREE.Vector3(1, 0, 0),
-    uAxis: new THREE.Vector3(0, 0, -1),
-    vAxis: new THREE.Vector3(0, 1, 0),
-    width: 1.22,
-    height: 0.36,
-    thickness: 0.09,
+    center: [-0.085, 0, 0],
+    normal: [1, 0, 0],
+    uAxis: [0, 0, -1],
+    vAxis: [0, 1, 0],
+    width: 1.08,
+    height: 0.32,
+    thickness: 0.07,
   },
-  unionJack: {
+  uj: {
     id: 'UNION_JACK',
-    center: new THREE.Vector3(0, 0.08, 0),
-    normal: new THREE.Vector3(0, 1, 0),
-    uAxis: new THREE.Vector3(1, 0, 0),
-    vAxis: new THREE.Vector3(0, 0, -1),
-    width: 1.18,
-    height: 0.708,
-    thickness: 0.08,
-    whiteVoidThickness: 0.14,
+    center: [0, 0.070, 0],
+    normal: [0, 1, 0],
+    uAxis: [1, 0, 0],
+    vAxis: [0, 0, -1],
+    width: 1.0,
+    height: 0.60,
+    thickness: 0.07,
+    whiteVoidThickness: 0.12,
   },
+};
+
+const COLORS = {
+  text: 0xE8EFF3,
+  ujBlue: 0x1F3B73,
+  ujRed: 0xC8102E,
 };
 
 function mulberry32(seed) {
@@ -57,6 +71,16 @@ function hashSeed(seed, label) {
   return h >>> 0;
 }
 
+function descriptorToVectors(THREE, descriptor) {
+  return {
+    ...descriptor,
+    center: new THREE.Vector3(...descriptor.center),
+    normal: new THREE.Vector3(...descriptor.normal).normalize(),
+    uAxis: new THREE.Vector3(...descriptor.uAxis).normalize(),
+    vAxis: new THREE.Vector3(...descriptor.vAxis).normalize(),
+  };
+}
+
 function drawRect(ctx, x, y, w, h) {
   ctx.beginPath();
   ctx.rect(x, y, w, h);
@@ -73,7 +97,7 @@ function drawPolygon(ctx, points) {
   ctx.fill();
 }
 
-function createTextMask(text, width = 1200, height = 360) {
+function createTextMask(word, width = 1024, height = 256) {
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
@@ -82,7 +106,7 @@ function createTextMask(text, width = 1200, height = 360) {
   ctx.fillStyle = '#ffffff';
 
   const marginX = width * 0.08;
-  const marginY = height * 0.12;
+  const marginY = height * 0.14;
   const availableWidth = width - marginX * 2;
   const availableHeight = height - marginY * 2;
   const letterWidth = availableWidth / 4.55;
@@ -140,21 +164,13 @@ function createTextMask(text, width = 1200, height = 360) {
     drawRect(ctx, px, y + h - cap, letterWidth, cap);
   }
 
-  const drawLetter = {
-    H: drawH,
-    A: drawA,
-    L: drawL,
-    E: drawE,
-    I: drawI,
-  };
-
-  for (const char of text) {
+  const drawLetter = { H: drawH, A: drawA, L: drawL, E: drawE, I: drawI };
+  for (const char of word) {
     drawLetter[char]?.(x);
     x += letterWidth + gap;
   }
 
-  const image = ctx.getImageData(0, 0, width, height);
-  return { canvas, image };
+  return ctx.getImageData(0, 0, width, height);
 }
 
 function createUnionJackMasks(width = 1000, height = 600) {
@@ -163,15 +179,12 @@ function createUnionJackMasks(width = 1000, height = 600) {
   canvas.height = height;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
-  const BLUE = '#00247D';
+  const BLUE = '#012169';
   const WHITE = '#FFFFFF';
-  const RED = '#CF142B';
+  const RED = '#C8102E';
 
   ctx.fillStyle = BLUE;
   ctx.fillRect(0, 0, width, height);
-
-  const clipRect = new Path2D();
-  clipRect.rect(0, 0, width, height);
 
   const diagWhiteWidth = height * 0.20;
   const diagRedWidth = height * 0.10;
@@ -181,7 +194,9 @@ function createUnionJackMasks(width = 1000, height = 600) {
 
   function strokeClipped(x1, y1, x2, y2, lineWidth, color) {
     ctx.save();
-    ctx.clip(clipRect);
+    ctx.beginPath();
+    ctx.rect(0, 0, width, height);
+    ctx.clip();
     ctx.lineCap = 'butt';
     ctx.strokeStyle = color;
     ctx.lineWidth = lineWidth;
@@ -237,7 +252,7 @@ function createUnionJackMasks(width = 1000, height = 600) {
     const b = data[i + 2];
     if (r > 210 && g > 210 && b > 210) {
       white[p] = 1;
-    } else if (r > 160 && g < 80 && b < 100) {
+    } else if (r > 140 && g < 90 && b < 110) {
       red[p] = 1;
     } else {
       blue[p] = 1;
@@ -251,44 +266,126 @@ function createUnionJackMasks(width = 1000, height = 600) {
   };
 }
 
-function sampleMaskChannel(mask, nx, ny) {
+function sampleBinaryMask(mask, nx, ny) {
   if (nx < 0 || nx > 1 || ny < 0 || ny > 1) {
     return 0;
   }
   const x = Math.min(mask.width - 1, Math.max(0, Math.round(nx * (mask.width - 1))));
   const y = Math.min(mask.height - 1, Math.max(0, Math.round(ny * (mask.height - 1))));
-  return mask.data[y * mask.width + x];
+  const index = y * mask.width + x;
+  return mask.data[index];
 }
 
-function sampleTextMask(image, nx, ny) {
+function sampleTextMask(imageData, nx, ny) {
   if (nx < 0 || nx > 1 || ny < 0 || ny > 1) {
     return 0;
   }
-  const x = Math.min(image.width - 1, Math.max(0, Math.round(nx * (image.width - 1))));
-  const y = Math.min(image.height - 1, Math.max(0, Math.round(ny * (image.height - 1))));
-  const idx = (y * image.width + x) * 4 + 3;
-  return image.data[idx] > 128 ? 1 : 0;
+  const x = Math.min(imageData.width - 1, Math.max(0, Math.round(nx * (imageData.width - 1))));
+  const y = Math.min(imageData.height - 1, Math.max(0, Math.round(ny * (imageData.height - 1))));
+  const alphaIndex = (y * imageData.width + x) * 4 + 3;
+  return imageData.data[alphaIndex] > 128 ? 1 : 0;
 }
 
-function createShardGeometry() {
-  const geometry = new THREE.TetrahedronGeometry(1, 0).toNonIndexed();
+function createShardGeometry(THREE) {
+  const positions = new Float32Array([
+    0.0, 0.0, 1.15,
+    -0.62, -0.34, -0.78,
+    0.48, -0.56, -0.70,
+
+    0.0, 0.0, 1.15,
+    0.48, -0.56, -0.70,
+    0.58, 0.38, -0.76,
+
+    0.0, 0.0, 1.15,
+    0.58, 0.38, -0.76,
+    -0.44, 0.52, -0.72,
+
+    0.0, 0.0, 1.15,
+    -0.44, 0.52, -0.72,
+    -0.62, -0.34, -0.78,
+  ]);
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   geometry.computeVertexNormals();
   return geometry;
 }
 
-function makeTransparentMaterial(color) {
-  return new THREE.MeshStandardMaterial({
-    color,
-    roughness: 0.78,
-    metalness: 0.0,
-    transparent: true,
-    opacity: 0.44,
-    depthWrite: false,
-    vertexColors: true,
-  });
+function createMaterialSet(THREE) {
+  return {
+    debug: {
+      hale: new THREE.MeshBasicMaterial({
+        color: COLORS.text,
+        transparent: true,
+        opacity: 0.82,
+        depthWrite: false,
+        depthTest: false,
+        toneMapped: false,
+      }),
+      hail: new THREE.MeshBasicMaterial({
+        color: COLORS.text,
+        transparent: true,
+        opacity: 0.82,
+        depthWrite: false,
+        depthTest: false,
+        toneMapped: false,
+      }),
+      ujBlue: new THREE.MeshBasicMaterial({
+        color: COLORS.ujBlue,
+        transparent: true,
+        opacity: 0.82,
+        depthWrite: false,
+        depthTest: false,
+        toneMapped: false,
+      }),
+      ujRed: new THREE.MeshBasicMaterial({
+        color: COLORS.ujRed,
+        transparent: true,
+        opacity: 0.82,
+        depthWrite: false,
+        depthTest: false,
+        toneMapped: false,
+      }),
+    },
+    production: {
+      hale: new THREE.MeshStandardMaterial({
+        color: COLORS.text,
+        roughness: 0.78,
+        metalness: 0.0,
+        transparent: true,
+        opacity: 0.52,
+        depthWrite: false,
+      }),
+      hail: new THREE.MeshStandardMaterial({
+        color: COLORS.text,
+        roughness: 0.78,
+        metalness: 0.0,
+        transparent: true,
+        opacity: 0.52,
+        depthWrite: false,
+      }),
+      ujBlue: new THREE.MeshStandardMaterial({
+        color: COLORS.ujBlue,
+        roughness: 0.78,
+        metalness: 0.0,
+        transparent: true,
+        opacity: 0.56,
+        depthWrite: false,
+      }),
+      ujRed: new THREE.MeshStandardMaterial({
+        color: COLORS.ujRed,
+        roughness: 0.78,
+        metalness: 0.0,
+        transparent: true,
+        opacity: 0.56,
+        depthWrite: false,
+      }),
+    },
+  };
 }
 
 function createLayerMesh({
+  THREE,
   descriptor,
   count,
   random,
@@ -305,14 +402,13 @@ function createLayerMesh({
   const tempEuler = new THREE.Euler();
   const tempScale = new THREE.Vector3();
   const tempMatrix = new THREE.Matrix4();
-  const tempColor = new THREE.Color();
+  const tempColor = new THREE.Color(baseColor);
+  let placed = 0;
 
-  const cellEstimate = Math.ceil(Math.sqrt(count * (descriptor.width / descriptor.height)) * 1.4);
-  const gridX = Math.max(10, cellEstimate);
-  const gridY = Math.max(4, Math.round(gridX * descriptor.height / descriptor.width));
+  const gridX = Math.max(10, Math.ceil(Math.sqrt(count * (descriptor.width / descriptor.height))));
+  const gridY = Math.max(4, Math.ceil(gridX * descriptor.height / descriptor.width));
   const cellW = descriptor.width / gridX;
   const cellH = descriptor.height / gridY;
-  let placed = 0;
 
   function tryPlace(nx, ny) {
     if (!sampler(nx, ny)) {
@@ -321,15 +417,15 @@ function createLayerMesh({
 
     const u = (nx - 0.5) * descriptor.width;
     const v = (0.5 - ny) * descriptor.height;
-    const w = ((random() + random() + random()) / 3 - 0.5) * descriptor.thickness;
+    const bias = ((random() + random() + random()) / 3 - 0.5) * descriptor.thickness;
 
     position.copy(descriptor.center)
       .addScaledVector(descriptor.uAxis, u)
       .addScaledVector(descriptor.vAxis, v)
-      .addScaledVector(descriptor.normal, w)
-      .addScaledVector(descriptor.uAxis, (random() - 0.5) * cellW * 0.42)
-      .addScaledVector(descriptor.vAxis, (random() - 0.5) * cellH * 0.42)
-      .addScaledVector(descriptor.normal, (random() - 0.5) * descriptor.thickness * 0.18);
+      .addScaledVector(descriptor.normal, bias)
+      .addScaledVector(descriptor.uAxis, (random() - 0.5) * cellW * 0.35)
+      .addScaledVector(descriptor.vAxis, (random() - 0.5) * cellH * 0.35)
+      .addScaledVector(descriptor.normal, (random() - 0.5) * descriptor.thickness * 0.14);
 
     if (position.length() > safeRadius) {
       return;
@@ -341,15 +437,15 @@ function createLayerMesh({
       random() * Math.PI * 2,
     );
     tempQuat.setFromEuler(tempEuler);
-
-    const scaleX = THREE.MathUtils.lerp(0.010, 0.018, random());
-    const scaleY = THREE.MathUtils.lerp(0.007, 0.015, random());
-    const scaleZ = THREE.MathUtils.lerp(0.008, 0.020, random());
-    tempScale.set(scaleX, scaleY, scaleZ);
+    tempScale.set(
+      THREE.MathUtils.lerp(0.010, 0.018, random()),
+      THREE.MathUtils.lerp(0.007, 0.015, random()),
+      THREE.MathUtils.lerp(0.008, 0.020, random()),
+    );
     tempMatrix.compose(position, tempQuat, tempScale);
     mesh.setMatrixAt(placed, tempMatrix);
 
-    tempColor.copy(baseColor).offsetHSL(0, (random() - 0.5) * 0.03, (random() - 0.5) * 0.08);
+    tempColor.set(baseColor).offsetHSL(0, (random() - 0.5) * 0.02, (random() - 0.5) * 0.06);
     mesh.setColorAt(placed, tempColor);
     placed += 1;
   }
@@ -363,7 +459,7 @@ function createLayerMesh({
   }
 
   let attempts = 0;
-  while (placed < count && attempts < count * 20) {
+  while (placed < count && attempts < count * 24) {
     attempts += 1;
     tryPlace(random(), random());
   }
@@ -373,33 +469,40 @@ function createLayerMesh({
   if (mesh.instanceColor) {
     mesh.instanceColor.needsUpdate = true;
   }
-  mesh.computeBoundingSphere();
   mesh.computeBoundingBox();
+  mesh.computeBoundingSphere();
   return mesh;
 }
 
-function createLayerBounds(descriptor, color = 0x8fd3ff) {
+function createLayerBounds(THREE, descriptor, color) {
   const box = new THREE.BoxGeometry(descriptor.width, descriptor.height, descriptor.thickness);
   const edges = new THREE.EdgesGeometry(box);
   const line = new THREE.LineSegments(
     edges,
-    new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.28 }),
+    new THREE.LineBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.32,
+      depthTest: false,
+      toneMapped: false,
+    }),
   );
 
   const basis = new THREE.Matrix4().makeBasis(
-    descriptor.uAxis.clone().normalize(),
-    descriptor.vAxis.clone().normalize(),
-    descriptor.normal.clone().normalize(),
+    descriptor.uAxis.clone(),
+    descriptor.vAxis.clone(),
+    descriptor.normal.clone(),
   );
   line.quaternion.setFromRotationMatrix(basis);
   line.position.copy(descriptor.center);
+  line.renderOrder = 45;
   return line;
 }
 
-export function createUnionJackWhiteVoidTester(descriptor, whiteMask) {
+function createWhiteVoidTester(THREE, descriptor, whiteMask) {
   const local = new THREE.Vector3();
-  return function isInWhiteVoid(worldPoint) {
-    local.copy(worldPoint).sub(descriptor.center);
+  return function whiteVoidTest(position) {
+    local.copy(position).sub(descriptor.center);
     const u = local.dot(descriptor.uAxis);
     const v = local.dot(descriptor.vAxis);
     const w = local.dot(descriptor.normal);
@@ -413,107 +516,176 @@ export function createUnionJackWhiteVoidTester(descriptor, whiteMask) {
 
     const nx = u / descriptor.width + 0.5;
     const ny = 0.5 - v / descriptor.height;
-    return !!sampleMaskChannel(whiteMask, nx, ny);
+    return Boolean(sampleBinaryMask(whiteMask, nx, ny));
   };
 }
 
-export function buildPerceptualContent({ safeRadius, reduced = false, debug = false, seed = 240328 }) {
-  const group = new THREE.Group();
-  group.name = 'PerceptualContentRoot';
+export function buildPerceptualContent({
+  THREE,
+  safeRadius,
+  mode = 'production',
+  layerFilter = 'all',
+  debug = false,
+}) {
+  const root = new THREE.Group();
+  root.name = 'PerceptualContentRoot';
 
-  const textCount = reduced ? 1100 : 1600;
-  const blueCount = reduced ? 1500 : 2200;
-  const redCount = reduced ? 600 : 900;
-
-  const shardGeometry = createShardGeometry();
-  const textMaterial = makeTransparentMaterial(FROST_TEXT);
-  const blueMaterial = makeTransparentMaterial(UJ_BLUE);
-  const redMaterial = makeTransparentMaterial(UJ_RED);
-
-  const haleMask = createTextMask('HALE');
-  const hailMask = createTextMask('HAIL');
-  const unionJackMasks = createUnionJackMasks();
-
-  const haleRandom = mulberry32(hashSeed(seed, 'hale'));
-  const hailRandom = mulberry32(hashSeed(seed, 'hail'));
-  const blueRandom = mulberry32(hashSeed(seed, 'uj-blue'));
-  const redRandom = mulberry32(hashSeed(seed, 'uj-red'));
-
-  const haleMesh = createLayerMesh({
-    descriptor: LAYERS.hale,
-    count: textCount,
-    random: haleRandom,
-    geometry: shardGeometry,
-    material: textMaterial,
-    sampler: (nx, ny) => sampleTextMask(haleMask.image, nx, ny),
-    safeRadius,
-    baseColor: FROST_TEXT,
-  });
-  haleMesh.name = 'Layer_HALE';
-  haleMesh.renderOrder = 10;
-
-  const hailMesh = createLayerMesh({
-    descriptor: LAYERS.hail,
-    count: textCount,
-    random: hailRandom,
-    geometry: shardGeometry,
-    material: textMaterial.clone(),
-    sampler: (nx, ny) => sampleTextMask(hailMask.image, nx, ny),
-    safeRadius,
-    baseColor: FROST_TEXT,
-  });
-  hailMesh.name = 'Layer_HAIL';
-  hailMesh.renderOrder = 10;
-
-  const blueMesh = createLayerMesh({
-    descriptor: LAYERS.unionJack,
-    count: blueCount,
-    random: blueRandom,
-    geometry: shardGeometry,
-    material: blueMaterial,
-    sampler: (nx, ny) => sampleMaskChannel(unionJackMasks.blue, nx, ny),
-    safeRadius,
-    baseColor: UJ_BLUE,
-  });
-  blueMesh.name = 'Layer_UJ_Blue';
-  blueMesh.renderOrder = 11;
-
-  const redMesh = createLayerMesh({
-    descriptor: LAYERS.unionJack,
-    count: redCount,
-    random: redRandom,
-    geometry: shardGeometry,
-    material: redMaterial,
-    sampler: (nx, ny) => sampleMaskChannel(unionJackMasks.red, nx, ny),
-    safeRadius,
-    baseColor: UJ_RED,
-  });
-  redMesh.name = 'Layer_UJ_Red';
-  redMesh.renderOrder = 12;
-
-  group.add(haleMesh, hailMesh, blueMesh, redMesh);
-
-  if (debug) {
-    group.add(
-      createLayerBounds(LAYERS.hale, 0xbedfff),
-      createLayerBounds(LAYERS.hail, 0xffd0be),
-      createLayerBounds(LAYERS.unionJack, 0xbefbc2),
-    );
-  }
-
-  const whiteVoidTester = createUnionJackWhiteVoidTester(LAYERS.unionJack, unionJackMasks.white);
-
-  group.userData.dispose = () => {
-    haleMesh.geometry.dispose();
-    haleMesh.material.dispose();
-    hailMesh.material.dispose();
-    blueMesh.material.dispose();
-    redMesh.material.dispose();
+  const descriptors = {
+    hale: descriptorToVectors(THREE, LAYER_DESCRIPTORS.hale),
+    hail: descriptorToVectors(THREE, LAYER_DESCRIPTORS.hail),
+    uj: descriptorToVectors(THREE, LAYER_DESCRIPTORS.uj),
   };
 
+  const textHaleMask = createTextMask('HALE');
+  const textHailMask = createTextMask('HAIL');
+  const unionJackMasks = createUnionJackMasks();
+  const whiteVoidTest = createWhiteVoidTester(THREE, descriptors.uj, unionJackMasks.white);
+  const shardGeometry = createShardGeometry(THREE);
+  const materials = createMaterialSet(THREE);
+  const activeMode = mode === 'debug' ? 'debug' : 'production';
+  const counts = activeMode === 'debug' ? DEBUG_COUNTS : PRODUCTION_COUNTS;
+  const layerRefs = {
+    hale: null,
+    hail: null,
+    ujBlue: null,
+    ujRed: null,
+  };
+  const diagnostics = [];
+
+  const randomHale = mulberry32(hashSeed(240328, 'hale'));
+  const randomHail = mulberry32(hashSeed(240328, 'hail'));
+  const randomUjBlue = mulberry32(hashSeed(240328, 'ujBlue'));
+  const randomUjRed = mulberry32(hashSeed(240328, 'ujRed'));
+
+  function includesLayer(id) {
+    if (layerFilter === 'all' || !layerFilter) {
+      return true;
+    }
+    if (layerFilter === 'uj') {
+      return id === 'uj';
+    }
+    return layerFilter === id;
+  }
+
+  if (includesLayer('hale')) {
+    const haleMesh = createLayerMesh({
+      THREE,
+      descriptor: descriptors.hale,
+      count: counts.hale,
+      random: randomHale,
+      geometry: shardGeometry,
+      material: materials[activeMode].hale,
+      sampler: (nx, ny) => sampleTextMask(textHaleMask, nx, ny),
+      safeRadius,
+      baseColor: COLORS.text,
+    });
+    haleMesh.name = 'Layer_HALE';
+    haleMesh.renderOrder = activeMode === 'debug' ? 40 : 10;
+    root.add(haleMesh);
+    layerRefs.hale = haleMesh;
+  }
+
+  if (includesLayer('hail')) {
+    const hailMesh = createLayerMesh({
+      THREE,
+      descriptor: descriptors.hail,
+      count: counts.hail,
+      random: randomHail,
+      geometry: shardGeometry,
+      material: materials[activeMode].hail,
+      sampler: (nx, ny) => sampleTextMask(textHailMask, nx, ny),
+      safeRadius,
+      baseColor: COLORS.text,
+    });
+    hailMesh.name = 'Layer_HAIL';
+    hailMesh.renderOrder = activeMode === 'debug' ? 40 : 10;
+    root.add(hailMesh);
+    layerRefs.hail = hailMesh;
+  }
+
+  if (includesLayer('uj')) {
+    const ujBlue = createLayerMesh({
+      THREE,
+      descriptor: descriptors.uj,
+      count: counts.ujBlue,
+      random: randomUjBlue,
+      geometry: shardGeometry,
+      material: materials[activeMode].ujBlue,
+      sampler: (nx, ny) => sampleBinaryMask(unionJackMasks.blue, nx, ny),
+      safeRadius,
+      baseColor: COLORS.ujBlue,
+    });
+    ujBlue.name = 'Layer_UJ_Blue';
+    ujBlue.renderOrder = activeMode === 'debug' ? 40 : 10;
+    root.add(ujBlue);
+    layerRefs.ujBlue = ujBlue;
+
+    const ujRed = createLayerMesh({
+      THREE,
+      descriptor: descriptors.uj,
+      count: counts.ujRed,
+      random: randomUjRed,
+      geometry: shardGeometry,
+      material: materials[activeMode].ujRed,
+      sampler: (nx, ny) => sampleBinaryMask(unionJackMasks.red, nx, ny),
+      safeRadius,
+      baseColor: COLORS.ujRed,
+    });
+    ujRed.name = 'Layer_UJ_Red';
+    ujRed.renderOrder = activeMode === 'debug' ? 40 : 11;
+    root.add(ujRed);
+    layerRefs.ujRed = ujRed;
+  }
+
+  if (debug) {
+    if (includesLayer('hale')) {
+      diagnostics.push(createLayerBounds(THREE, descriptors.hale, 0xbedfff));
+    }
+    if (includesLayer('hail')) {
+      diagnostics.push(createLayerBounds(THREE, descriptors.hail, 0xffd0be));
+    }
+    if (includesLayer('uj')) {
+      diagnostics.push(createLayerBounds(THREE, descriptors.uj, 0xbefbc2));
+    }
+    diagnostics.forEach((line) => root.add(line));
+  }
+
+  function setMode(nextMode) {
+    const resolvedMode = nextMode === 'debug' ? 'debug' : 'production';
+    const debugOrder = resolvedMode === 'debug' ? 40 : 10;
+    if (layerRefs.hale) {
+      layerRefs.hale.material = materials[resolvedMode].hale;
+      layerRefs.hale.renderOrder = debugOrder;
+    }
+    if (layerRefs.hail) {
+      layerRefs.hail.material = materials[resolvedMode].hail;
+      layerRefs.hail.renderOrder = debugOrder;
+    }
+    if (layerRefs.ujBlue) {
+      layerRefs.ujBlue.material = materials[resolvedMode].ujBlue;
+      layerRefs.ujBlue.renderOrder = debugOrder;
+    }
+    if (layerRefs.ujRed) {
+      layerRefs.ujRed.material = materials[resolvedMode].ujRed;
+      layerRefs.ujRed.renderOrder = resolvedMode === 'debug' ? 40 : 11;
+    }
+  }
+
+  function dispose() {
+    shardGeometry.dispose();
+    Object.values(materials.debug).forEach((material) => material.dispose());
+    Object.values(materials.production).forEach((material) => material.dispose());
+    diagnostics.forEach((line) => {
+      line.geometry?.dispose?.();
+      line.material?.dispose?.();
+    });
+  }
+
   return {
-    group,
-    descriptors: LAYERS,
-    isInWhiteVoid: whiteVoidTester,
+    root,
+    whiteVoidTest,
+    layerRefs,
+    setMode,
+    dispose,
   };
 }
