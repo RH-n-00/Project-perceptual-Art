@@ -13,6 +13,10 @@ const autoEnabled = params.get('auto') !== '0';
 const debug = params.get('debug') === '1';
 const debugContent = params.get('debugContent') === '1';
 const layerFilter = ['all', 'hale', 'hail', 'uj'].includes(params.get('layer')) ? (params.get('layer') || 'all') : 'all';
+const hailCountParam = Number.parseInt(params.get('hailCount') || '', 10);
+const hailCount = Number.isFinite(hailCountParam)
+  ? THREE.MathUtils.clamp(hailCountParam, 0, 1200)
+  : 320;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color('#23272b');
@@ -66,6 +70,74 @@ userRig.add(sculptureRoot);
 autoRig.add(userRig);
 artworkRoot.add(autoRig);
 scene.add(artworkRoot);
+
+function createHailField({ source, count, seed = 17 }) {
+  const group = new THREE.Group();
+  group.name = 'HailField';
+  const random = (() => {
+    let t = seed >>> 0;
+    return function randomValue() {
+      t += 0x6d2b79f5;
+      let r = Math.imul(t ^ (t >>> 15), 1 | t);
+      r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+      return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+    };
+  })();
+  const flakes = [];
+  const spread = 6.4;
+
+  for (let i = 0; i < count; i += 1) {
+    const flake = source.clone(true);
+    flake.name = `Hailstone_${i + 1}`;
+
+    const content = flake.getObjectByName('PerceptualContentRoot');
+    if (content) {
+      content.clear();
+      content.visible = false;
+    }
+
+    const scale = THREE.MathUtils.lerp(0.035, 0.11, random());
+    flake.scale.setScalar(scale);
+    flake.position.set(
+      (random() - 0.5) * spread * 1.8,
+      (random() - 0.5) * spread * 1.4,
+      (random() - 0.5) * spread * 1.6,
+    );
+    flake.rotation.set(
+      random() * Math.PI * 2,
+      random() * Math.PI * 2,
+      random() * Math.PI * 2,
+    );
+
+    const drift = new THREE.Vector3(
+      (random() - 0.5) * 0.05,
+      -THREE.MathUtils.lerp(0.06, 0.22, random()),
+      (random() - 0.5) * 0.05,
+    );
+
+    flakes.push({ flake, drift });
+    group.add(flake);
+  }
+
+  return {
+    group,
+    update(deltaSeconds) {
+      for (const { flake, drift } of flakes) {
+        flake.position.addScaledVector(drift, deltaSeconds);
+        flake.rotation.x += deltaSeconds * 0.35;
+        flake.rotation.y += deltaSeconds * 0.25;
+        if (flake.position.y < -spread) {
+          flake.position.y = spread;
+          flake.position.x = (random() - 0.5) * spread * 1.8;
+          flake.position.z = (random() - 0.5) * spread * 1.6;
+        }
+      }
+    },
+  };
+}
+
+const hailField = createHailField({ source: sculpture, count: hailCount });
+artworkRoot.add(hailField.group);
 
 const contentHandle = buildPerceptualContent({
   THREE,
@@ -142,6 +214,7 @@ renderer.setAnimationLoop(() => {
   const delta = clock.getDelta();
   const elapsed = clock.getElapsedTime();
   rotationRig.update(delta, elapsed);
+  hailField.update(delta);
   renderer.render(scene, camera);
 });
 
