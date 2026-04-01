@@ -13,6 +13,10 @@ const autoEnabled = params.get('auto') !== '0';
 const debug = params.get('debug') === '1';
 const debugContent = params.get('debugContent') === '1';
 const layerFilter = ['all', 'hale', 'hail', 'uj'].includes(params.get('layer')) ? (params.get('layer') || 'all') : 'all';
+const hailCountParam = Number.parseInt(params.get('hailCount') || '', 10);
+const hailCount = Number.isFinite(hailCountParam)
+  ? THREE.MathUtils.clamp(hailCountParam, 0, 4000)
+  : 640;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color('#23272b');
@@ -66,6 +70,105 @@ userRig.add(sculptureRoot);
 autoRig.add(userRig);
 artworkRoot.add(autoRig);
 scene.add(artworkRoot);
+
+function createHailField({ geometry, material, count, seed = 17 }) {
+  const group = new THREE.Group();
+  group.name = 'HailField';
+  if (count <= 0) {
+    return {
+      group,
+      update() {},
+    };
+  }
+
+  const random = (() => {
+    let t = seed >>> 0;
+    return function randomValue() {
+      t += 0x6d2b79f5;
+      let r = Math.imul(t ^ (t >>> 15), 1 | t);
+      r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+      return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+    };
+  })();
+  const spread = 7.2;
+  const instanced = new THREE.InstancedMesh(geometry, material, count);
+  instanced.name = 'HailFieldInstanced';
+  instanced.frustumCulled = false;
+  instanced.renderOrder = 9;
+  instanced.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+
+  const dummy = new THREE.Object3D();
+  const position = new Array(count);
+  const velocity = new Array(count);
+  const spin = new Array(count);
+  const euler = new Array(count);
+  const scale = new Array(count);
+
+  for (let i = 0; i < count; i += 1) {
+    position[i] = new THREE.Vector3(
+      (random() - 0.5) * spread * 1.8,
+      (random() - 0.5) * spread * 1.4,
+      (random() - 0.5) * spread * 1.6,
+    );
+    velocity[i] = new THREE.Vector3(
+      (random() - 0.5) * 0.06,
+      -THREE.MathUtils.lerp(0.08, 0.28, random()),
+      (random() - 0.5) * 0.06,
+    );
+    euler[i] = new THREE.Euler(
+      random() * Math.PI * 2,
+      random() * Math.PI * 2,
+      random() * Math.PI * 2,
+    );
+    spin[i] = new THREE.Vector3(
+      THREE.MathUtils.lerp(0.15, 0.48, random()),
+      THREE.MathUtils.lerp(0.1, 0.35, random()),
+      THREE.MathUtils.lerp(0.08, 0.28, random()),
+    );
+    scale[i] = THREE.MathUtils.lerp(0.028, 0.095, random());
+
+    dummy.position.copy(position[i]);
+    dummy.rotation.copy(euler[i]);
+    dummy.scale.setScalar(scale[i]);
+    dummy.updateMatrix();
+    instanced.setMatrixAt(i, dummy.matrix);
+  }
+
+  instanced.instanceMatrix.needsUpdate = true;
+  group.add(instanced);
+
+  return {
+    group,
+    update(deltaSeconds) {
+      for (let i = 0; i < count; i += 1) {
+        position[i].addScaledVector(velocity[i], deltaSeconds);
+        euler[i].x += spin[i].x * deltaSeconds;
+        euler[i].y += spin[i].y * deltaSeconds;
+        euler[i].z += spin[i].z * deltaSeconds;
+
+        if (position[i].y < -spread) {
+          position[i].y = spread;
+          position[i].x = (random() - 0.5) * spread * 1.8;
+          position[i].z = (random() - 0.5) * spread * 1.6;
+        }
+
+        dummy.position.copy(position[i]);
+        dummy.rotation.copy(euler[i]);
+        dummy.scale.setScalar(scale[i]);
+        dummy.updateMatrix();
+        instanced.setMatrixAt(i, dummy.matrix);
+      }
+      instanced.instanceMatrix.needsUpdate = true;
+    },
+  };
+}
+
+const hailField = createHailField({
+  geometry: sculpture.userData.refs.outerShell.geometry,
+  material: sculpture.userData.refs.outerShell.material,
+  count: hailCount,
+});
+artworkRoot.add(hailField.group);
 
 const contentHandle = buildPerceptualContent({
   THREE,
@@ -142,6 +245,7 @@ renderer.setAnimationLoop(() => {
   const delta = clock.getDelta();
   const elapsed = clock.getElapsedTime();
   rotationRig.update(delta, elapsed);
+  hailField.update(delta);
   renderer.render(scene, camera);
 });
 
